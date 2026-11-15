@@ -30,12 +30,14 @@ Se a execução ficar vermelha, o log do passo *Coletar Kalshi e Polymarket* diz
 
 - **Volume do:** Dia (24 horas), Semana (7 dias), Mês (30 dias) ou Ano (12 meses). Muda a ordenação e o volume mostrado.
 - **Categoria:** Esportes, Política, Economia, Cripto, Cultura, Ciência e tecnologia, Clima, Mundo, Outros.
-- O endereço guarda a escolha, por exemplo `#semana-politica`, e pode ser salvo nos favoritos.
+- **Plataforma:** Kalshi, Polymarket ou Ambas. No celular a barra fica presa no topo durante a rolagem. A escolha é lembrada em cada aparelho.
+- O endereço guarda período e categoria, por exemplo `#semana-politica`, e pode ser salvo nos favoritos.
+- **Tela inicial:** a página tem ícone e manifesto. No iPhone, Compartilhar → *Adicionar à Tela de Início*; no Android, menu do Chrome → *Adicionar à tela inicial*. Aberta por ali, ela busca a coleta nova sozinha ao voltar ao primeiro plano.
 
 ## Como os números são calculados
 
 - **Só mercados abertos.** Um jogo encerrado ontem não aparece, mesmo que tenha sido o maior da semana.
-- **Polymarket:** a API publica o volume de cada período (`volume24hr`, `volume1wk`, `volume1mo`, `volume1yr`). O script lê os 2.000 maiores eventos de cada um.
+- **Polymarket:** a API publica o volume de cada período (`volume24hr`, `volume1wk`, `volume1mo`, `volume1yr`). O script lê os 2.000 maiores eventos de cada um, pela paginação por cursor (`/events/keyset`); a paginação antiga, por offset, fica de reserva e é limitada pela API a poucos milhares de eventos.
 - **Kalshi:** a API publica só o volume de 24 horas e o total desde a abertura, e não ordena por volume. O script varre todos os eventos abertos e calcula os outros períodos assim:
   - mercado aberto há menos tempo que o período: o volume do período é o total (exato);
   - mercado mais antigo: soma dos candles diários, consultados para até 3.000 eventos que podem entrar em algum ranking;

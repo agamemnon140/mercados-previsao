@@ -204,12 +204,13 @@ const snake = (field) => field.replace(/^volume/, 'volume_');
 /**
  * scenario.kalshi:  'ok' | 'down' | 'flaky'
  * scenario.candles: 'ok' | 'down'
- * scenario.poly:    'ok' | 'ignore-order' | 'reject-camel' | 'down'
+ * scenario.poly:    uma ou mais de 'ignore-order' | 'reject-camel' | 'no-keyset' | 'offset-limit' | 'down'
  */
 export function startMock(scenario = {}) {
   const kalshi = kalshiEvents();
   const poly = polymarketEvents();
   const hits = { kalshi: 0, candles: 0, poly: 0 };
+  const polyFlags = new Set([].concat(scenario.poly ?? []));
 
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://mock');
@@ -242,19 +243,31 @@ export function startMock(scenario = {}) {
       return send(200, kalshiCandles(event, Number(url.searchParams.get('start_ts')), Number(url.searchParams.get('end_ts'))));
     }
 
-    if (url.pathname === '/events') {
+    if (url.pathname === '/events' || url.pathname === '/events/keyset') {
       hits.poly += 1;
-      if (scenario.poly === 'down') return send(503, 'upstream unavailable');
+      const keyset = url.pathname === '/events/keyset';
+      if (polyFlags.has('down')) return send(503, 'upstream unavailable');
+      if (keyset && (polyFlags.has('no-keyset') || polyFlags.has('offset-limit'))) return send(404, '{"error":"not found"}');
+      if (keyset && url.searchParams.has('offset')) return send(422, '{"error":"offset is not supported, use after_cursor"}');
       const order = url.searchParams.get('order');
-      if (scenario.poly === 'reject-camel' && CAMEL_ORDER.includes(order)) return send(422, '{"error":"invalid order field"}');
+      if (polyFlags.has('reject-camel') && CAMEL_ORDER.includes(order)) return send(422, '{"type":"validation error","error":"order fields are not valid"}');
       let list = poly.filter((e) => e.active && !e.closed);
       const field = CAMEL_ORDER.find((f) => f === order || snake(f) === order);
-      if (field && scenario.poly !== 'ignore-order') {
+      if (field && !polyFlags.has('ignore-order')) {
         // NULLS FIRST, como um ORDER BY ... DESC de Postgres.
         list = list.slice().sort((a, b) => (b[field] ?? Infinity) - (a[field] ?? Infinity));
       }
-      const limit = Number(url.searchParams.get('limit') ?? 20);
+      const limit = Math.min(Number(url.searchParams.get('limit') ?? 20), 100);
+      if (keyset) {
+        const start = Number(url.searchParams.get('after_cursor') || 0);
+        const slice = list.slice(start, start + limit);
+        // O cursor só vem quando a página voltou cheia.
+        return send(200, slice.length === limit ? { events: slice, next_cursor: String(start + limit) } : { events: slice });
+      }
       const offset = Number(url.searchParams.get('offset') ?? 0);
+      if (polyFlags.has('offset-limit') && offset >= 200) {
+        return send(422, '{"type":"validation error","error":"offset too large, use /events/keyset for deeper pagination"}');
+      }
       return send(200, list.slice(offset, offset + limit));
     }
 

@@ -19,7 +19,7 @@ const POLY_DEPTH = intEnv('POLY_DEPTH', 2000); // eventos lidos por janela na Po
 const KALSHI_MAX_PAGES = intEnv('KALSHI_MAX_PAGES', 600); // 200 eventos por página
 const KALSHI_CANDLE_EVENTS = intEnv('KALSHI_CANDLE_EVENTS', 3000); // eventos com histórico consultado
 const HISTORY_TOP = intEnv('HISTORY_TOP', 100); // por janela, quantos entram no resumo diário
-const POLY_SCAN_MAX_PAGES = intEnv('POLY_SCAN_MAX_PAGES', 300); // 100 eventos por página
+const POLY_SCAN_MAX_PAGES = intEnv('POLY_SCAN_MAX_PAGES', 600); // 100 eventos por página
 const PAUSE_MS = intEnv('PAUSE_MS', 120); // pausa entre requisições
 const RETRY_BASE_MS = intEnv('RETRY_BASE_MS', 1000);
 const TIMEOUT_MS = intEnv('TIMEOUT_MS', 30000);
@@ -453,13 +453,12 @@ export function normalizePolymarketEvent(event) {
   };
 }
 
-function polymarketUrl({ order, offset, limit }) {
-  const url = new URL(`${GAMMA_BASE}/events`);
+function polymarketUrl(pathname, { order, limit }) {
+  const url = new URL(`${GAMMA_BASE}${pathname}`);
   url.searchParams.set('active', 'true');
   url.searchParams.set('closed', 'false');
   url.searchParams.set('archived', 'false');
   url.searchParams.set('limit', String(limit));
-  url.searchParams.set('offset', String(offset));
   if (order) {
     url.searchParams.set('order', order);
     url.searchParams.set('ascending', 'false');
@@ -467,60 +466,109 @@ function polymarketUrl({ order, offset, limit }) {
   return url;
 }
 
-/** Confere se a API realmente ordenou pelo volume da janela (ela ignora campos que não conhece). */
+/**
+ * Percorre a listagem de eventos ativos, página a página, chamando `onPage`
+ * (que devolve false para parar). Usa a paginação por cursor; se ela não
+ * responder logo na primeira página, usa a antiga, por offset, que a API
+ * limita a poucos milhares de eventos. `complete` diz se a listagem chegou ao fim.
+ */
+async function eachPolymarketPage({ order, maxPages }, onPage) {
+  const limit = 100;
+  let paging = 'cursor';
+  let cursor = '';
+  for (let page = 0; page < maxPages; page++) {
+    let events;
+    let hasMore;
+    if (paging === 'cursor') {
+      try {
+        const url = polymarketUrl('/events/keyset', { order, limit });
+        if (cursor) url.searchParams.set('after_cursor', cursor);
+        const body = await fetchJson(url);
+        if (!Array.isArray(body?.events)) throw new Error('formato inesperado em /events/keyset');
+        events = body.events;
+        cursor = typeof body.next_cursor === 'string' ? body.next_cursor : '';
+        hasMore = Boolean(cursor);
+      } catch (err) {
+        if (page > 0) throw err; // no meio da listagem não dá para trocar de método
+        paging = 'offset';
+      }
+    }
+    if (paging === 'offset') {
+      const url = polymarketUrl('/events', { order, limit });
+      url.searchParams.set('offset', String(page * limit));
+      try {
+        const body = await fetchJson(url);
+        if (!Array.isArray(body)) throw new Error('formato inesperado em /events');
+        events = body;
+        hasMore = body.length === limit;
+      } catch (err) {
+        // Limite de profundidade da API: fica com o que já veio.
+        if (page > 0 && /offset too large/i.test(err.message)) return { paging, complete: false };
+        throw err;
+      }
+    }
+    const wantsMore = onPage(events) !== false;
+    if (!hasMore) return { paging, complete: true };
+    if (!wantsMore) return { paging, complete: false };
+    await sleep(PAUSE_MS);
+  }
+  return { paging, complete: false };
+}
+
+/**
+ * Confere se a API realmente ordenou pelo volume da janela (ela ignora campos
+ * que não conhece). Os volumes mudam enquanto as páginas são lidas, então
+ * alguma troca entre vizinhos é normal; uma lista que ignorou a ordenação tem
+ * perto de metade dos pares invertidos.
+ */
 export function isSortedByVolume(records, window) {
   if (!records.length || !(records[0]._raw[window] > 0)) return false;
+  let inversions = 0;
   for (let i = 1; i < records.length; i++) {
-    if (records[i]._raw[window] > records[i - 1]._raw[window] * 1.001 + 1) return false;
+    if (records[i]._raw[window] > records[i - 1]._raw[window] * 1.001 + 1) inversions += 1;
   }
-  return true;
+  const allowed = records.length < 20 ? 0 : Math.floor(records.length * 0.1);
+  return inversions <= allowed;
 }
 
 /** Caminho rápido: a API devolve os eventos já ordenados e bastam poucas páginas por janela. */
 async function polymarketSorted(order, window) {
-  const limit = 100;
   const seen = new Set();
   const kept = [];
-  const maxPages = Math.ceil(POLY_DEPTH / limit) + 5;
-  for (let page = 0; page < maxPages && kept.length < POLY_DEPTH; page++) {
-    const batch = await fetchJson(polymarketUrl({ order, offset: page * limit, limit }));
-    if (!Array.isArray(batch)) throw new Error('formato inesperado em /events');
-    for (const event of batch) {
+  const maxPages = Math.ceil(POLY_DEPTH / 100) + 5;
+  const { paging } = await eachPolymarketPage({ order, maxPages }, (events) => {
+    let added = 0;
+    for (const event of events) {
       const record = normalizePolymarketEvent(event);
       if (!record.id || seen.has(record.id)) continue;
       seen.add(record.id);
-      if (record._raw[window] > 0) kept.push(record); // nulos podem vir na frente
+      if (record._raw[window] > 0) {
+        kept.push(record); // nulos podem vir na frente
+        added += 1;
+      }
     }
-    if (batch.length < limit) break;
-    await sleep(PAUSE_MS);
-  }
-  return kept;
+    // Para ao atingir a profundidade pedida ou ao entrar na cauda sem volume.
+    return kept.length < POLY_DEPTH && !(added === 0 && kept.length > 0);
+  });
+  return { kept, paging };
 }
 
 /** Caminho lento: varre todos os eventos ativos e ordena aqui. */
 async function polymarketScan() {
-  const limit = 100;
   const seen = new Set();
   const kept = [];
   let scanned = 0;
-  let truncated = true;
-  for (let page = 0; page < POLY_SCAN_MAX_PAGES; page++) {
-    const batch = await fetchJson(polymarketUrl({ order: null, offset: page * limit, limit }));
-    if (!Array.isArray(batch)) throw new Error('formato inesperado em /events');
-    scanned += batch.length;
-    for (const event of batch) {
+  const { paging, complete } = await eachPolymarketPage({ order: null, maxPages: POLY_SCAN_MAX_PAGES }, (events) => {
+    scanned += events.length;
+    for (const event of events) {
       const record = normalizePolymarketEvent(event);
       if (!record.id || seen.has(record.id)) continue;
       seen.add(record.id);
       if (record.volume.total > 0) kept.push(record);
     }
-    if (batch.length < limit) {
-      truncated = false;
-      break;
-    }
-    await sleep(PAUSE_MS);
-  }
-  return { kept, scanned, truncated };
+    return true;
+  });
+  return { kept, scanned, truncated: !complete, paging };
 }
 
 async function collectPolymarket() {
@@ -528,6 +576,7 @@ async function collectPolymarket() {
   const byId = new Map();
   const sortMode = {};
   const notes = [];
+  let paging = null;
 
   for (const window of WINDOWS) {
     const field = POLY_VOLUME_FIELD[window];
@@ -535,10 +584,11 @@ async function collectPolymarket() {
     const spellings = [field, field.replace(/^volume/, 'volume_')];
     for (const order of spellings) {
       try {
-        const kept = await polymarketSorted(order, window);
-        if (isSortedByVolume(kept, window)) {
-          for (const record of kept) byId.set(record.id, record);
+        const sorted = await polymarketSorted(order, window);
+        if (isSortedByVolume(sorted.kept, window)) {
+          for (const record of sorted.kept) byId.set(record.id, record);
           sortMode[window] = `api:${order}`;
+          paging = sorted.paging;
           break;
         }
         notes.push(`order=${order} veio fora de ordem`);
@@ -550,12 +600,12 @@ async function collectPolymarket() {
   }
 
   if (WINDOWS.every((window) => sortMode[window])) {
-    return { ...base, sort_mode: sortMode, truncated: false, ...buildRankings([...byId.values()]) };
+    return { ...base, sort_mode: sortMode, paging, truncated: false, ...buildRankings([...byId.values()]) };
   }
 
   console.log(`  Polymarket: ordenação pela API indisponível (${notes.join('; ')}); varrendo tudo.`);
-  const { kept, scanned, truncated } = await polymarketScan();
-  return { ...base, sort_mode: 'varredura', scanned_events: scanned, truncated, ...buildRankings(kept) };
+  const scan = await polymarketScan();
+  return { ...base, sort_mode: 'varredura', paging: scan.paging, scanned_events: scan.scanned, truncated: scan.truncated, ...buildRankings(scan.kept) };
 }
 
 // ------------------------------------------------------------------- saída

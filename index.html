@@ -5,6 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Maiores mercados de previsão</title>
 <meta name="description" content="Os maiores mercados da Kalshi e da Polymarket por volume no dia, na semana, no mês e no ano, atualizados uma vez por dia.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-title" content="Mercados">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#e9edf3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e1626" media="(prefers-color-scheme: dark)">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
@@ -100,7 +109,13 @@ h1 {
 }
 .switch button:last-child { border-right: 0; }
 .switch button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
-.venue-switch { display: none; }
+
+/* Qual plataforma aparece. No celular a barra acompanha a rolagem. */
+.venue-bar { margin: 0 0 1rem; }
+.venue-bar .switch button { min-width: 7rem; }
+.board[data-show="kalshi"] .venue[data-venue="polymarket"],
+.board[data-show="polymarket"] .venue[data-venue="kalshi"] { display: none; }
+.board[data-show="kalshi"], .board[data-show="polymarket"] { grid-template-columns: minmax(0, 1fr); max-width: 780px; }
 
 /* Colunas */
 .board { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem; align-items: start; }
@@ -163,9 +178,9 @@ h1 {
   .page { padding: 1.4rem 0.9rem 2.5rem; }
   .stamp { text-align: left; }
   .board { grid-template-columns: minmax(0, 1fr); }
-  .venue-switch { display: inline-flex; }
-  .board[data-show="kalshi"] .venue[data-venue="polymarket"],
-  .board[data-show="polymarket"] .venue[data-venue="kalshi"] { display: none; }
+  .venue-bar { position: sticky; top: 0; z-index: 5; margin: 0 -0.9rem 0.75rem; padding: 0.5rem 0.9rem; background: var(--bg); border-bottom: 1px solid var(--rule); }
+  .venue-bar .switch { display: flex; }
+  .venue-bar .switch button { flex: 1; min-width: 0; }
   .venue { padding: 1rem 0.9rem 0.4rem; }
 }
 @media (max-width: 480px) {
@@ -211,13 +226,17 @@ h1 {
         <button type="button" data-count="100" aria-pressed="false">100</button>
       </div>
     </div>
-    <div class="switch venue-switch" id="venue-switch" role="group" aria-label="Plataforma exibida">
-      <button type="button" data-venue="kalshi" aria-pressed="true">Kalshi</button>
+  </div>
+
+  <div class="venue-bar" id="venue-bar" hidden>
+    <div class="switch" id="venue-switch" role="group" aria-label="Plataforma exibida">
+      <button type="button" data-venue="kalshi" aria-pressed="false">Kalshi</button>
       <button type="button" data-venue="polymarket" aria-pressed="false">Polymarket</button>
+      <button type="button" data-venue="ambas" aria-pressed="true">Ambas</button>
     </div>
   </div>
 
-  <main class="board" id="board" data-show="kalshi"></main>
+  <main class="board" id="board" data-show="ambas"></main>
 
   <footer class="notes" id="notes" hidden>
     <p>Entram só mercados ainda abertos. O período muda a ordenação e o volume mostrado: últimas 24 horas, 7 dias, 30 dias ou 12 meses. A porcentagem e a variação são sempre as de agora contra 24 horas atrás.</p>
@@ -510,6 +529,24 @@ h1 {
     $('category').value = state.category;
   }
 
+  const VENUE_KEY = 'mercados-previsao:plataforma';
+
+  function showVenue(venue) {
+    $('board').dataset.show = venue;
+    press('venue-switch', 'venue', venue);
+  }
+
+  /** A última escolha neste aparelho; sem ela, uma coluna no celular e as duas em tela larga. */
+  function savedVenue() {
+    try {
+      const saved = localStorage.getItem(VENUE_KEY);
+      if (['kalshi', 'polymarket', 'ambas'].includes(saved)) return saved;
+    } catch {
+      // Armazenamento indisponível: segue com o padrão.
+    }
+    return matchMedia('(max-width: 880px)').matches ? 'kalshi' : 'ambas';
+  }
+
   function showStamp() {
     const generated = state.data.generated_at;
     const hours = (Date.now() - new Date(generated)) / 3600000;
@@ -556,8 +593,12 @@ h1 {
   $('venue-switch').addEventListener('click', (event) => {
     const button = event.target.closest('button');
     if (!button) return;
-    $('board').dataset.show = button.dataset.venue;
-    press('venue-switch', 'venue', button.dataset.venue);
+    showVenue(button.dataset.venue);
+    try {
+      localStorage.setItem(VENUE_KEY, button.dataset.venue);
+    } catch {
+      // Sem armazenamento, a escolha vale só até fechar a página.
+    }
   });
   window.addEventListener('hashchange', () => {
     readHash();
@@ -567,28 +608,45 @@ h1 {
 
   readHash();
   syncControls();
+  showVenue(savedVenue());
 
-  fetch(`data/latest.json?t=${Date.now()}`, { cache: 'no-store' })
-    .then((res) => {
-      if (res.status === 404) throw new Error('missing');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return res.json();
-    })
-    .then((data) => {
-      if (data.schema !== 2) throw new Error('formato antigo');
-      state.data = data;
-      $('controls').hidden = false;
-      $('notes').hidden = false;
-      showStamp();
-      render();
-    })
-    .catch((err) => {
-      showFailure(
-        err.message === 'missing'
-          ? 'Ainda não há dados. Abra a aba Actions do repositório e rode “Atualizar odds” uma vez.'
-          : `Não deu para ler data/latest.json (${err.message}). Recarregue a página em alguns minutos.`,
-      );
-    });
+  let loadedAt = 0;
+
+  function load() {
+    return fetch(`data/latest.json?t=${Date.now()}`, { cache: 'no-store' })
+      .then((res) => {
+        if (res.status === 404) throw new Error('missing');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then((data) => {
+        if (data.schema !== 2) throw new Error('formato antigo');
+        const first = !state.data;
+        state.data = data;
+        loadedAt = Date.now();
+        $('controls').hidden = false;
+        $('venue-bar').hidden = false;
+        $('notes').hidden = false;
+        showStamp();
+        if (first) render();
+        else draw(); // atualização em segundo plano: mantém página e eventos abertos
+      })
+      .catch((err) => {
+        if (state.data) return; // já há dados na tela; tenta de novo na próxima volta
+        showFailure(
+          err.message === 'missing'
+            ? 'Ainda não há dados. Abra a aba Actions do repositório e rode “Atualizar odds” uma vez.'
+            : `Não deu para ler data/latest.json (${err.message}). Recarregue a página em alguns minutos.`,
+        );
+      });
+  }
+
+  // Salvo na tela inicial, o app fica aberto por dias: ao voltar para ele, busca a coleta nova.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && Date.now() - loadedAt > 30 * 60000) load();
+  });
+
+  load();
 })();
 </script>
 </body>

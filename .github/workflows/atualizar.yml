@@ -7,7 +7,7 @@ on:
   workflow_dispatch: # permite rodar na hora pela aba Actions
   push:
     branches: [main]
-    paths: ['index.html', 'scripts/**', '.github/workflows/atualizar.yml']
+    paths: ['index.html', 'favicon.svg', 'manifest.webmanifest', 'icons/**', 'scripts/**', '.github/workflows/atualizar.yml']
 
 permissions:
   contents: write
@@ -62,7 +62,8 @@ jobs:
         if: always()
         run: |
           mkdir -p _site/data
-          cp index.html _site/
+          cp index.html favicon.svg manifest.webmanifest _site/
+          cp -r icons _site/icons
           cp data/latest.json _site/data/
 
       - uses: actions/upload-pages-artifact@v5

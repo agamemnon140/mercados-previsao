@@ -6,7 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { startMock } from './mock.mjs';
-import { sumCandles, unifiedCategory, resolveKalshiVolumes, normalizeKalshiEvent, normalizePolymarketEvent } from '../scripts/fetch.mjs';
+import { sumCandles, unifiedCategory, resolveKalshiVolumes, normalizeKalshiEvent, normalizePolymarketEvent, isSortedByVolume } from '../scripts/fetch.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../scripts/fetch.mjs', import.meta.url));
 
@@ -395,4 +395,53 @@ test('resultados guardados respeitam o teto por evento', () => {
   assert.equal(event.more.length, 46, '50 guardados no total');
   assert.deepEqual(event.more[0], ['Candidato 4', 0.076, 0]);
   assert.equal(event.more.at(-1)[0], 'Candidato 49');
+});
+
+test('Polymarket: paginação por cursor é a padrão; sem ela, usa offset', async () => {
+  const withCursor = await scenario({});
+  assert.equal(withCursor.data.venues.polymarket.paging, 'cursor');
+
+  const { code, data } = await scenario({ poly: 'no-keyset' });
+  assert.equal(code, 0);
+  const p = data.venues.polymarket;
+  assert.equal(p.paging, 'offset');
+  assert.equal(p.sort_mode.day, 'api:volume24hr');
+  assert.equal(p.rankings.day.all[0], '9001');
+  assert.equal(p.rankings.year.all[0], '9003');
+});
+
+test('Polymarket: limite de offset da API encurta a lista em vez de derrubar a coleta', async () => {
+  // Ordenada: fica com os 200 maiores de cada período, o que basta para o ranking.
+  const sorted = await scenario({ poly: 'offset-limit' });
+  assert.equal(sorted.code, 0);
+  const p = sorted.data.venues.polymarket;
+  assert.equal(p.ok, true);
+  assert.equal(p.sort_mode.day, 'api:volume24hr');
+  assert.equal(p.rankings.day.all.length, 100);
+  assert.equal(p.rankings.day.all[0], '9001');
+
+  // Sem ordenação e sem cursor: a varredura para no limite e a coluna sai marcada como incompleta.
+  const scan = await scenario({ poly: ['offset-limit', 'ignore-order'] });
+  assert.equal(scan.code, 0);
+  assert.equal(scan.data.venues.polymarket.ok, true);
+  assert.equal(scan.data.venues.polymarket.sort_mode, 'varredura');
+  assert.equal(scan.data.venues.polymarket.truncated, true);
+  assert.equal(scan.data.venues.polymarket.scanned_events, 200);
+});
+
+test('conferência de ordenação tolera troca de vizinhos, não lista embaralhada', () => {
+  const list = (volumes) => volumes.map((v) => ({ _raw: { day: v } }));
+  const sorted = Array.from({ length: 200 }, (_, i) => 100000 - i * 100);
+  assert.equal(isSortedByVolume(list(sorted), 'day'), true);
+
+  // Volumes mexeram durante a leitura: alguns vizinhos trocados.
+  const drift = sorted.slice();
+  for (const i of [20, 75, 130, 131, 180]) [drift[i], drift[i + 1]] = [drift[i + 1], drift[i]];
+  assert.equal(isSortedByVolume(list(drift), 'day'), true);
+
+  // API que ignorou a ordenação.
+  const shuffled = sorted.map((v, i) => sorted[(i * 97) % sorted.length]);
+  assert.equal(isSortedByVolume(list(shuffled), 'day'), false);
+  assert.equal(isSortedByVolume(list([0, 5, 3]), 'day'), false);
+  assert.equal(isSortedByVolume(list([]), 'day'), false);
 });
