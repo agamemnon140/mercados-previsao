@@ -659,7 +659,10 @@ export async function main() {
       venues[key] = { ok: true, error: null, fetched_at: new Date().toISOString(), ...result };
       const top = result.events[topDay[0]];
       console.log(`  ${Object.keys(result.events).length} eventos guardados; maior do dia: "${top.title}" (${top.volume.day.toLocaleString('pt-BR')})`);
-      if (result.candles) console.log(`  candles: ${result.candles.ok} de ${result.candles.requested} eventos consultados`);
+      if (result.candles) {
+        const { ok, requested, failed: missed, error } = result.candles;
+        console.log(`  candles: ${ok} de ${requested} eventos consultados${missed ? `; ${missed} falharam (último erro: ${error})` : ''}`);
+      }
       if (result.truncated) console.log('  Aviso: a varredura bateu no limite de páginas e pode estar incompleta.');
     } catch (err) {
       failed.push(key);
