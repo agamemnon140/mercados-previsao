@@ -150,7 +150,8 @@ h1 {
 .rail .was { width: 9px; height: 9px; border: 1.5px solid var(--muted); background: var(--panel); }
 .rail .now { width: 11px; height: 11px; background: var(--hue); }
 
-.more-button { margin: 0.25rem 0 1rem 2.4rem; padding: 0.5rem 0.9rem; border: 1px solid var(--rule); border-radius: 4px; background: none; color: var(--ink); font: inherit; cursor: pointer; }
+.more-button { margin: 0.25rem 0 0 2.4rem; padding: 0.5rem 0.9rem; border: 1px solid var(--rule); border-radius: 4px; background: none; color: var(--ink); font: inherit; cursor: pointer; }
+.more-note { margin: 0.4rem 0 1rem 2.4rem; color: var(--muted); font-size: 0.85rem; }
 
 /* Rodapé */
 .notes { margin: 2rem 0 0; color: var(--muted); font-size: 0.9rem; max-width: 76ch; }
@@ -252,7 +253,7 @@ h1 {
     max: 'No máximo este valor: é o total desde a abertura, há mais de um ano.',
   };
   const YES_NO = { Yes: 'Sim', No: 'Não' };
-  const state = { data: null, query: '', count: 25, window: 'day', category: 'all' };
+  const state = { data: null, query: '', count: 25, window: 'day', category: 'all', extra: { kalshi: 0, polymarket: 0 } };
 
   const $ = (id) => document.getElementById(id);
   const compact = new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 });
@@ -411,7 +412,7 @@ h1 {
     const ranked = ids
       .map((id, index) => ({ event: events[id], position: index + 1 }))
       .filter(({ event }) => event && matches(event, query));
-    const shown = ranked.slice(0, state.count);
+    const shown = ranked.slice(0, state.count + state.extra[venue.key]);
 
     if (!shown.length) {
       const scope = state.category === 'all' ? 'mercado' : `mercado de ${CATEGORIES[state.category]}`;
@@ -426,15 +427,26 @@ h1 {
 
     panel.append(el('ol', { class: 'events' }, shown.map(({ event, position }) => eventRow(venue.key, event, position))));
     if (ranked.length > shown.length) {
-      const button = el('button', { class: 'more-button', type: 'button', text: `Mostrar todos os ${ranked.length}` });
-      button.addEventListener('click', () => setCount(100));
-      panel.append(button);
+      const rest = ranked.length - shown.length;
+      const step = Math.min(state.count, rest);
+      const button = el('button', { class: 'more-button', type: 'button', text: `Mostrar mais ${step}` });
+      button.addEventListener('click', () => {
+        state.extra[venue.key] += step;
+        draw();
+      });
+      panel.append(button, el('p', { class: 'more-note', text: `${shown.length} de ${ranked.length}` }));
     }
     return panel;
   }
 
-  function render() {
+  function draw() {
     $('board').replaceChildren(...VENUES.map(venuePanel));
+  }
+
+  /** Qualquer mudança de período, categoria, filtro ou tamanho volta as colunas ao início. */
+  function render() {
+    state.extra = { kalshi: 0, polymarket: 0 };
+    draw();
   }
 
   function press(groupId, attribute, value) {

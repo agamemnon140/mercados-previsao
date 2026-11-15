@@ -23,6 +23,8 @@ function run(mock, outDir, env = {}) {
           OUT_DIR: outDir,
           PAUSE_MS: '0',
           RETRY_BASE_MS: '5',
+          TOP_N: '100',
+          TOP_PER_CATEGORY: '30',
           NO_PROXY: '127.0.0.1,localhost',
           ...env,
         },

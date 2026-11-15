@@ -14,7 +14,7 @@ permissions:
   pages: write
   id-token: write
 
-# Uma execução por vez: cada uma parte do último commit e grava os dados por cima.
+# Uma execução por vez: cada uma parte do último commit e grava o resumo do dia por cima.
 concurrency:
   group: atualizar-odds
   cancel-in-progress: false
@@ -22,23 +22,35 @@ concurrency:
 jobs:
   coletar:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
         with:
           ref: main
+
+      # O arquivo completo não fica no repositório, só no site. A cópia publicada
+      # serve de reserva: se uma plataforma falhar hoje, a coluna dela é mantida.
+      - name: Buscar a coleta anterior
+        run: |
+          mkdir -p data
+          url="https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/data/latest.json"
+          if curl -fsSL --max-time 60 "$url" -o /tmp/anterior.json; then
+            mv /tmp/anterior.json data/latest.json
+          else
+            echo "Sem coleta anterior publicada em $url."
+          fi
 
       # O runner já traz Node com fetch nativo; o script não tem dependências.
       - name: Coletar Kalshi e Polymarket
         run: node scripts/fetch.mjs
 
       # Roda mesmo se uma das plataformas falhou: a outra é publicada e o job fica vermelho.
-      - name: Gravar dados no repositório
+      - name: Gravar o resumo do dia no repositório
         if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data
+          git add data/history
           if git diff --cached --quiet; then
             echo "Nada novo para gravar."
           else
@@ -49,9 +61,9 @@ jobs:
       - name: Montar o site
         if: always()
         run: |
-          mkdir -p _site
+          mkdir -p _site/data
           cp index.html _site/
-          cp -r data _site/data
+          cp data/latest.json _site/data/
 
       - uses: actions/upload-pages-artifact@v5
         if: always()

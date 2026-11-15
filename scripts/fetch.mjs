@@ -13,11 +13,12 @@ import { pathToFileURL } from 'node:url';
 const KALSHI_BASE = trimSlash(process.env.KALSHI_BASE ?? 'https://external-api.kalshi.com/trade-api/v2');
 const GAMMA_BASE = trimSlash(process.env.GAMMA_BASE ?? 'https://gamma-api.polymarket.com');
 const OUT_DIR = process.env.OUT_DIR ?? 'data';
-const TOP_N = intEnv('TOP_N', 100); // tamanho do ranking geral de cada janela
-const TOP_PER_CATEGORY = intEnv('TOP_PER_CATEGORY', 30); // tamanho do ranking de cada categoria
-const POLY_DEPTH = intEnv('POLY_DEPTH', 500); // eventos lidos por janela na Polymarket
+const TOP_N = intEnv('TOP_N', 500); // tamanho do ranking geral de cada janela
+const TOP_PER_CATEGORY = intEnv('TOP_PER_CATEGORY', 100); // tamanho do ranking de cada categoria
+const POLY_DEPTH = intEnv('POLY_DEPTH', 2000); // eventos lidos por janela na Polymarket
 const KALSHI_MAX_PAGES = intEnv('KALSHI_MAX_PAGES', 600); // 200 eventos por página
-const KALSHI_CANDLE_EVENTS = intEnv('KALSHI_CANDLE_EVENTS', 1000); // eventos com histórico consultado
+const KALSHI_CANDLE_EVENTS = intEnv('KALSHI_CANDLE_EVENTS', 3000); // eventos com histórico consultado
+const HISTORY_TOP = intEnv('HISTORY_TOP', 100); // por janela, quantos entram no resumo diário
 const POLY_SCAN_MAX_PAGES = intEnv('POLY_SCAN_MAX_PAGES', 300); // 100 eventos por página
 const PAUSE_MS = intEnv('PAUSE_MS', 120); // pausa entre requisições
 const RETRY_BASE_MS = intEnv('RETRY_BASE_MS', 1000);
@@ -610,8 +611,13 @@ async function readJson(file) {
   }
 }
 
+/** Resumo do dia: os maiores de cada janela, sem repetir, com volume e probabilidades. */
 function historyEntry(venue) {
-  return (venue.rankings?.day?.all ?? []).map((id) => {
+  const ids = new Set();
+  for (const window of WINDOWS) {
+    for (const id of (venue.rankings?.[window]?.all ?? []).slice(0, HISTORY_TOP)) ids.add(id);
+  }
+  return [...ids].map((id) => {
     const e = venue.events[id];
     return { id, title: e.title, volume: e.volume, outcomes: e.outcomes.map((o) => [o.label, o.prob]) };
   });
