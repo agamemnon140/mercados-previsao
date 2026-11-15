@@ -15,7 +15,7 @@ O navegador só fala com o GitHub Pages. Quem fala com a Kalshi e a Polymarket �
 ## Colocar no ar
 
 1. Crie um repositório **público** e suba estes arquivos na raiz.
-2. Em **Settings → Pages**, escolha *Deploy from a branch*, branch `main`, pasta `/ (root)`.
+2. Em **Settings → Pages**, em *Source*, escolha *GitHub Actions*. O próprio workflow publica o site depois de cada coleta.
 3. Em **Actions**, abra *Atualizar odds* e clique em *Run workflow*. Essa primeira execução é o teste real contra as APIs.
 4. Abra `https://SEU-USUARIO.github.io/NOME-DO-REPO/`.
 
@@ -33,12 +33,13 @@ Se a execução ficar vermelha, o log do passo *Coletar Kalshi e Polymarket* diz
 - **Polymarket:** a API publica o volume de cada período (`volume24hr`, `volume1wk`, `volume1mo`, `volume1yr`). O script lê os 500 maiores eventos de cada um.
 - **Kalshi:** a API publica só o volume de 24 horas e o total desde a abertura, e não ordena por volume. O script varre todos os eventos abertos e calcula os outros períodos assim:
   - mercado aberto há menos tempo que o período: o volume do período é o total (exato);
-  - mercado mais antigo: soma dos candles diários, consultados para até 400 eventos que podem entrar em algum ranking;
+  - mercado mais antigo: soma dos candles diários, consultados para até 1000 eventos que podem entrar em algum ranking;
   - sem candles: semana e mês ficam no piso conhecido (mostrado com `≥`) e ano fica no total (mostrado com `≤`).
 - **Unidades:** contratos na Kalshi (cada um paga US$ 1), dólares na Polymarket. As colunas não são diretamente comparáveis.
 - **Probabilidade:** ponto médio entre compra e venda quando o spread é de até 10 centavos; senão, o último negócio. A Polymarket já publica o preço assim; para a Kalshi o script aplica a mesma regra.
 - **Variação:** sempre a de 24 horas, qualquer que seja o período escolhido.
-- **Categorias:** as etiquetas de cada plataforma são reduzidas a um conjunto comum por palavras-chave (`CATEGORY_RULES` no script). Na Polymarket, que usa várias tags por evento, vence a primeira regra que casar, na ordem da lista.
+- **Categorias:** as etiquetas de cada plataforma são reduzidas a um conjunto comum por palavras-chave (`CATEGORY_RULES` no script). Na Polymarket, que usa várias tags por evento, cada tag e o título valem um ponto para a categoria que casar; vence a de mais pontos.
+- **Resultados mostrados:** até quatro por evento. Quando só um pode acontecer (vencedor de eleição, campeão), são os mais prováveis. Quando são independentes (faixas de preço, datas), são os mais próximos de 50%. Em jogos da Polymarket, só o mercado de vencedor.
 - **Rankings guardados:** os 100 maiores no geral e os 30 maiores de cada categoria, por período. Combos da Kalshi (eventos multivariados) ficam de fora.
 
 ## Ajustes
@@ -50,7 +51,7 @@ Variáveis de ambiente lidas pelo script (defina no passo *Coletar* do workflow)
 | `TOP_N` | 100 | Tamanho do ranking geral de cada período. |
 | `TOP_PER_CATEGORY` | 30 | Tamanho do ranking de cada categoria. |
 | `POLY_DEPTH` | 500 | Eventos lidos por período na Polymarket. |
-| `KALSHI_CANDLE_EVENTS` | 400 | Eventos da Kalshi com candles consultados. |
+| `KALSHI_CANDLE_EVENTS` | 1000 | Eventos da Kalshi com candles consultados. |
 | `KALSHI_MAX_PAGES` | 600 | Limite da varredura da Kalshi (200 eventos por página). |
 
 O horário fica na linha `cron` do workflow, sempre em UTC.
@@ -65,6 +66,5 @@ Os testes sobem um servidor local que imita as duas APIs no formato documentado 
 
 ## Limites conhecidos
 
-- O coletor foi escrito a partir da documentação pública e validado contra o servidor simulado. A primeira execução no GitHub Actions é o teste contra as APIs reais.
-- A documentação da Kalshi não deixa claro se os candles exigem autenticação. Se exigirem, a coleta continua e os períodos longos da Kalshi aparecem como limites.
+- Se os candles da Kalshi falharem numa coleta, ela continua e os períodos longos dos mercados antigos aparecem como limites.
 - Os links dos títulos apontam para kalshi.com e polymarket.com, que estão bloqueados em conexões brasileiras.

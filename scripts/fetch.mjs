@@ -17,7 +17,7 @@ const TOP_N = intEnv('TOP_N', 100); // tamanho do ranking geral de cada janela
 const TOP_PER_CATEGORY = intEnv('TOP_PER_CATEGORY', 30); // tamanho do ranking de cada categoria
 const POLY_DEPTH = intEnv('POLY_DEPTH', 500); // eventos lidos por janela na Polymarket
 const KALSHI_MAX_PAGES = intEnv('KALSHI_MAX_PAGES', 600); // 200 eventos por página
-const KALSHI_CANDLE_EVENTS = intEnv('KALSHI_CANDLE_EVENTS', 400); // eventos com histórico consultado
+const KALSHI_CANDLE_EVENTS = intEnv('KALSHI_CANDLE_EVENTS', 1000); // eventos com histórico consultado
 const POLY_SCAN_MAX_PAGES = intEnv('POLY_SCAN_MAX_PAGES', 300); // 100 eventos por página
 const PAUSE_MS = intEnv('PAUSE_MS', 120); // pausa entre requisições
 const RETRY_BASE_MS = intEnv('RETRY_BASE_MS', 1000);
@@ -108,25 +108,32 @@ async function fetchJson(url, { retries = 4 } = {}) {
 
 // ---------------------------------------------------------------- categorias
 
-// A primeira regra que casar com algum rótulo vence, nesta ordem.
+// Cada rótulo (tag, categoria ou título) que casa com a expressão vale um ponto
+// para a categoria; vence a de mais pontos e, no empate, a que vem antes aqui.
 const CATEGORY_RULES = [
-  ['esportes', /\b(sports?|soccer|football|basketball|baseball|hockey|tennis|golf|nfl|nba|wnba|mlb|nhl|mls|epl|ufc|mma|boxing|f1|formula 1|cricket|esports|olympics?|ncaa|rugby|nascar)\b/],
+  ['esportes', /\b(sports?|esports|soccer|football|basketball|baseball|hockey|tennis|golf|nfl|nba|wnba|mlb|nhl|mls|epl|ucl|ufc|mma|boxing|f1|formula 1|cricket|olympics?|ncaa|rugby|nascar|pga|atp|wta|champions league|premier league|la liga|counter strike|dota|league of legends|valorant)\b/],
   ['cripto', /\b(crypto|cryptocurrency|bitcoin|btc|ethereum|solana|xrp|defi|stablecoins?|memecoins?|nfts?)\b/],
   ['clima', /\b(climate|weather|hurricanes?|temperature)\b/],
-  ['cultura', /\b(culture|entertainment|movies?|music|tv|television|awards?|celebrit(y|ies)|oscars?|grammys?|mentions?|social|gaming)\b/],
+  ['cultura', /\b(culture|entertainment|movies?|music|tv|television|netflix|awards?|celebrit(y|ies)|oscars?|grammys?|mentions?|social|gaming)\b/],
   ['ciencia', /\b(tech|technology|science|ai|space|health|medicine)\b/],
-  ['politica', /\b(politics?|elections?|congress|senate|trump|government|white house|supreme court)\b/],
-  ['economia', /\b(econom(y|ics)|financ(e|ials?)|fed|inflation|business|compan(y|ies)|earnings|stocks?|commodit(y|ies)|ipos?)\b/],
-  ['mundo', /\b(world|geopolitics|global|international|middle east|ukraine|russia|china|israel|iran)\b/],
+  ['mundo', /\b(world|geopolitics|foreign policy|military|ceasefire|war|global|international|middle east|ukraine|russia|china|taiwan|israel|iran|gaza|venezuela|cuba|north korea|nato)\b/],
+  ['economia', /\b(econom(y|ics|ic)|financ(e|ials?)|fed|fomc|inflation|cpi|gdp|macro|recession|tariffs?|business|compan(y|ies)|earnings|stocks?|commodit(y|ies)|oil|gold|ipos?|acquisitions?|rates?)\b/],
+  ['politica', /\b(politics?|elections?|midterms?|primar(y|ies)|congress|senate|governor|mayor|parliament|president(ial)?|prime ministers?|nominee|trump|government|white house|supreme court)\b/],
 ];
 
 /** Reduz as categorias e tags de cada plataforma a um conjunto comum. */
 export function unifiedCategory(labels) {
   const lowered = labels.map((label) => cleanText(label).toLowerCase()).filter(Boolean);
+  let best = 'outros';
+  let bestScore = 0;
   for (const [category, pattern] of CATEGORY_RULES) {
-    if (lowered.some((label) => pattern.test(label))) return category;
+    const score = lowered.filter((label) => pattern.test(label)).length;
+    if (score > bestScore) {
+      best = category;
+      bestScore = score;
+    }
   }
-  return 'outros';
+  return best;
 }
 
 // -------------------------------------------------------------------- Kalshi
@@ -185,7 +192,7 @@ export function normalizeKalshiEvent(event, nowMs = Date.now()) {
     liquidity: null,
     closes_at: closeTimes.at(-1) ?? null,
     n_outcomes: outcomes.length,
-    outcomes: topOutcomes(outcomes),
+    outcomes: pickOutcomes(outcomes, event.mutually_exclusive !== false),
     // Uso interno, para calcular o volume de cada janela; não vai para o arquivo.
     _series: series,
     _markets: markets
@@ -371,9 +378,13 @@ async function collectKalshi() {
 const POLY_VOLUME_FIELD = { day: 'volume24hr', week: 'volume1wk', month: 'volume1mo', year: 'volume1yr' };
 
 export function normalizePolymarketEvent(event) {
-  const markets = (Array.isArray(event.markets) ? event.markets : []).filter(
+  const active = (Array.isArray(event.markets) ? event.markets : []).filter(
     (m) => m.active !== false && m.closed !== true && m.archived !== true,
   );
+  // Num jogo, o evento traz dezenas de linhas (handicap, total de pontos). Vale o vencedor.
+  const moneyline = active.filter((m) => cleanText(m.sportsMarketType).toLowerCase() === 'moneyline');
+  const markets = moneyline.length ? moneyline : active;
+  const exclusive = moneyline.length > 0 || event.negRisk === true || markets.length === 1;
 
   let outcomes = [];
   if (markets.length === 1) {
@@ -419,7 +430,7 @@ export function normalizePolymarketEvent(event) {
     id: String(event.id ?? slug),
     title: cleanText(event.title),
     subtitle: '',
-    category: unifiedCategory([...tags, cleanText(event.category)]),
+    category: unifiedCategory([...tags, cleanText(event.category), cleanText(event.title)]),
     source_category: tags[0] ?? '',
     tags: tags.slice(0, 4),
     url: slug ? `https://polymarket.com/event/${encodeURIComponent(slug)}` : null,
@@ -435,7 +446,7 @@ export function normalizePolymarketEvent(event) {
     liquidity: round(num(event.liquidity), 0),
     closes_at: event.endDate ?? null,
     n_outcomes: outcomes.length,
-    outcomes: topOutcomes(outcomes),
+    outcomes: pickOutcomes(outcomes, exclusive),
     _raw: raw,
   };
 }
@@ -547,11 +558,20 @@ async function collectPolymarket() {
 
 // ------------------------------------------------------------------- saída
 
-function topOutcomes(outcomes) {
+/**
+ * Resultados mostrados por evento. Quando só um pode acontecer, valem os mais
+ * prováveis. Quando são independentes (faixas de preço, datas, linhas de aposta),
+ * os mais prováveis são quase certos e dizem pouco: valem os mais próximos de 50%.
+ */
+export function pickOutcomes(outcomes, exclusive) {
+  const byProb = (a, b) => (b.prob ?? -1) - (a.prob ?? -1) || b.volume_24h - a.volume_24h;
+  if (exclusive || outcomes.length <= OUTCOMES_KEPT) return outcomes.slice().sort(byProb).slice(0, OUTCOMES_KEPT);
+  const distance = (o) => (o.prob === null ? Infinity : Math.abs(o.prob - 0.5));
   return outcomes
     .slice()
-    .sort((a, b) => (b.prob ?? -1) - (a.prob ?? -1) || b.volume_24h - a.volume_24h)
-    .slice(0, OUTCOMES_KEPT);
+    .sort((a, b) => distance(a) - distance(b) || b.volume_24h - a.volume_24h)
+    .slice(0, OUTCOMES_KEPT)
+    .sort(byProb);
 }
 
 /**

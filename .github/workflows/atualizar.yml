@@ -5,10 +5,16 @@ on:
     # Todo dia às 09:17 UTC (06:17 em Brasília). O GitHub pode atrasar alguns minutos.
     - cron: '17 9 * * *'
   workflow_dispatch: # permite rodar na hora pela aba Actions
+  push:
+    branches: [main]
+    paths: ['index.html', 'scripts/**', '.github/workflows/atualizar.yml']
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
+# Uma execução por vez: cada uma parte do último commit e grava os dados por cima.
 concurrency:
   group: atualizar-odds
   cancel-in-progress: false
@@ -16,24 +22,50 @@ concurrency:
 jobs:
   coletar:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: main
 
       # O runner já traz Node com fetch nativo; o script não tem dependências.
       - name: Coletar Kalshi e Polymarket
         run: node scripts/fetch.mjs
 
       # Roda mesmo se uma das plataformas falhou: a outra é publicada e o job fica vermelho.
-      - name: Publicar dados
+      - name: Gravar dados no repositório
         if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data
           if git diff --cached --quiet; then
-            echo "Nada novo para publicar."
+            echo "Nada novo para gravar."
           else
             git commit -m "dados: $(date -u +%F)"
             git push
           fi
+
+      - name: Montar o site
+        if: always()
+        run: |
+          mkdir -p _site
+          cp index.html _site/
+          cp -r data _site/data
+
+      - uses: actions/upload-pages-artifact@v5
+        if: always()
+        with:
+          path: _site
+
+  publicar:
+    needs: coletar
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

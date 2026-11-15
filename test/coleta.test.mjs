@@ -6,7 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { startMock } from './mock.mjs';
-import { sumCandles, unifiedCategory, resolveKalshiVolumes } from '../scripts/fetch.mjs';
+import { sumCandles, unifiedCategory, resolveKalshiVolumes, normalizeKalshiEvent, normalizePolymarketEvent } from '../scripts/fetch.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../scripts/fetch.mjs', import.meta.url));
 
@@ -280,4 +280,92 @@ test('categorias das duas plataformas caem no mesmo conjunto', () => {
   assert.equal(unifiedCategory(['World']), 'mundo');
   assert.equal(unifiedCategory(['Transportation']), 'outros');
   assert.equal(unifiedCategory([]), 'outros');
+});
+
+test('categorias: casos reais de tags da Polymarket', () => {
+  // Decisão do Fed tem a tag "Trump", mas é economia.
+  assert.equal(unifiedCategory(['Fed', 'fomc', 'Trump', 'Economy', 'Fed Decision in December?']), 'economia');
+  // Eleição estrangeira com a tag "World" continua política.
+  assert.equal(unifiedCategory(['French Election', 'Main Election', 'France', 'World', 'Next French Presidential Election']), 'politica');
+  // Conflito internacional com a tag "Politics" vai para mundo.
+  assert.equal(unifiedCategory(['Politics', 'World', 'Geopolitics', 'Foreign Policy', 'Will China invade Taiwan by end of 2026?']), 'mundo');
+  assert.equal(unifiedCategory(['Iran', 'Israel', 'Geopolitics', 'Israel x Iran', 'Israel x Iran ceasefire continues through...?']), 'mundo');
+  // Sem tag útil, o título decide.
+  assert.equal(unifiedCategory(['UK', 'Labour', 'Andy Burnham', 'Keir Starmer', 'How many UK Prime Ministers by end of 2027?']), 'politica');
+  assert.equal(unifiedCategory(['Oil', 'Geopolitics', 'Commodities', 'Finance', 'Crude Oil all time high by...?']), 'economia');
+  assert.equal(unifiedCategory(['Esports', 'counter strike 2', 'Games', 'Sports']), 'esportes');
+  assert.equal(unifiedCategory(['Culture', 'TV', 'netflix', 'Movies']), 'cultura');
+});
+
+test('faixas independentes mostram os resultados mais próximos de 50%', () => {
+  const strike = (label, p) => ({
+    ticker: `KXBTCD-X-${label}`,
+    yes_sub_title: label,
+    status: 'active',
+    yes_bid_dollars: String(p - 0.005),
+    yes_ask_dollars: String(p + 0.005),
+    last_price_dollars: String(p),
+    previous_price_dollars: String(p),
+    volume_fp: '100.00',
+    volume_24h_fp: '10.00',
+    open_interest_fp: '5.00',
+    open_time: new Date().toISOString(),
+  });
+  const markets = [['$57k', 0.99], ['$58k', 0.97], ['$60k', 0.8], ['$62k', 0.55], ['$63k', 0.45], ['$65k', 0.2], ['$70k', 0.03]].map(([l, p]) => strike(l, p));
+  const base = { event_ticker: 'KXBTCD-X', series_ticker: 'KXBTCD', title: 'BTC price?', category: 'Crypto', markets };
+
+  const ladder = normalizeKalshiEvent({ ...base, mutually_exclusive: false });
+  assert.deepEqual(ladder.outcomes.map((o) => o.label), ['$60k', '$62k', '$63k', '$65k']);
+  assert.equal(ladder.n_outcomes, 7);
+
+  // Quando só um resultado pode acontecer, continuam valendo os mais prováveis.
+  const exclusive = normalizeKalshiEvent({ ...base, mutually_exclusive: true });
+  assert.deepEqual(exclusive.outcomes.map((o) => o.label), ['$57k', '$58k', '$60k', '$62k']);
+});
+
+test('jogo na Polymarket mostra o vencedor, não as linhas de handicap', () => {
+  const market = (question, outcomes, prices, sportsMarketType) => ({
+    question,
+    groupItemTitle: question,
+    outcomes: JSON.stringify(outcomes),
+    outcomePrices: JSON.stringify(prices.map(String)),
+    active: true,
+    closed: false,
+    sportsMarketType,
+    oneDayPriceChange: 0.04,
+    volume24hr: 1000,
+  });
+  const game = normalizePolymarketEvent({
+    id: 1,
+    slug: 'nba-lal-bos',
+    title: 'Lakers vs. Celtics',
+    volume24hr: 5000,
+    tags: [{ label: 'Sports' }, { label: 'NBA' }],
+    markets: [
+      market('O/U 220.5', ['Over', 'Under'], [0.97, 0.03], 'totals'),
+      market('Spread -3.5', ['Lakers', 'Celtics'], [0.95, 0.05], 'spreads'),
+      market('Lakers vs. Celtics', ['Lakers', 'Celtics'], [0.38, 0.62], 'moneyline'),
+    ],
+  });
+  assert.deepEqual(game.outcomes.map((o) => [o.label, o.prob, o.change_24h]), [
+    ['Celtics', 0.62, -0.04],
+    ['Lakers', 0.38, 0.04],
+  ]);
+  assert.equal(game.n_outcomes, 2);
+
+  // Futebol: três mercados Sim/Não (casa, empate, fora), todos "moneyline".
+  const soccer = normalizePolymarketEvent({
+    id: 2,
+    slug: 'epl-ars-che',
+    title: 'Arsenal vs. Chelsea',
+    volume24hr: 5000,
+    tags: [{ label: 'Sports' }, { label: 'Soccer' }],
+    markets: [
+      market('Arsenal', ['Yes', 'No'], [0.5, 0.5], 'moneyline'),
+      market('Draw', ['Yes', 'No'], [0.27, 0.73], 'moneyline'),
+      market('Chelsea', ['Yes', 'No'], [0.23, 0.77], 'moneyline'),
+      market('O/U 2.5', ['Over', 'Under'], [0.55, 0.45], 'totals'),
+    ],
+  });
+  assert.deepEqual(soccer.outcomes.map((o) => [o.label, o.prob]), [['Arsenal', 0.5], ['Draw', 0.27], ['Chelsea', 0.23]]);
 });
