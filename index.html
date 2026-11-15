@@ -140,6 +140,7 @@ h1 {
 .delta { color: var(--muted); font: 500 0.85rem/1.2 var(--narrow); white-space: nowrap; }
 .delta.big { color: var(--ink); font-weight: 600; }
 .more { margin: 0.25rem 0 0; color: var(--muted); font-size: 0.85rem; }
+.toggle { padding: 0; border: 0; background: none; color: var(--ink); font: inherit; text-decoration: underline; text-underline-offset: 0.18em; cursor: pointer; }
 
 /* Régua de 0 a 100%: o ponto cheio é hoje, o vazado é 24 horas atrás. */
 .rail { position: relative; height: 1rem; }
@@ -220,7 +221,7 @@ h1 {
 
   <footer class="notes" id="notes" hidden>
     <p>Entram só mercados ainda abertos. O período muda a ordenação e o volume mostrado: últimas 24 horas, 7 dias, 30 dias ou 12 meses. A porcentagem e a variação são sempre as de agora contra 24 horas atrás.</p>
-    <p>A porcentagem é a probabilidade implícita no preço do “sim”: o ponto médio entre compra e venda quando a diferença é de até 10 centavos, ou o último negócio quando é maior. Na régua, o ponto cheio é o valor de hoje e o círculo vazado é o de 24 horas antes.</p>
+    <p>A porcentagem é a probabilidade implícita no preço do “sim”: o ponto médio entre compra e venda quando a diferença é de até 10 centavos, ou o último negócio quando é maior. Na régua, o ponto cheio é o valor de hoje e o círculo vazado é o de 24 horas antes. Cada evento abre com até quatro resultados; “Mostrar mais” traz os demais, até 50 por evento.</p>
     <p>O volume está em contratos na Kalshi (cada contrato paga US$ 1 se o resultado acontecer) e em dólares na Polymarket, por isso as duas colunas não são diretamente comparáveis. A Polymarket publica o volume de cada período. A Kalshi publica só o de 24 horas e o total, então os outros períodos são calculados: mercado aberto há menos tempo que o período usa o total; mercado mais antigo usa a soma dos candles diários. Um valor com “≥” ou “≤” é um limite, não uma medida.</p>
     <p>As categorias são uma simplificação das etiquetas de cada plataforma. Fonte: APIs públicas da Kalshi e da Polymarket, lidas uma vez por dia. <a href="data/latest.json">Dados brutos em JSON</a>.</p>
   </footer>
@@ -253,7 +254,7 @@ h1 {
     max: 'No máximo este valor: é o total desde a abertura, há mais de um ano.',
   };
   const YES_NO = { Yes: 'Sim', No: 'Não' };
-  const state = { data: null, query: '', count: 25, window: 'day', category: 'all', extra: { kalshi: 0, polymarket: 0 } };
+  const state = { data: null, query: '', count: 25, window: 'day', category: 'all', extra: { kalshi: 0, polymarket: 0 }, open: new Set() };
 
   const $ = (id) => document.getElementById(id);
   const compact = new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 });
@@ -344,6 +345,31 @@ h1 {
     });
   }
 
+  const plural = (n) => `${n} ${n === 1 ? 'resultado' : 'resultados'}`;
+
+  /** Linha abaixo dos resultados: abre e fecha a lista guardada, ou só informa quantos existem. */
+  function outcomesFooter(key, event, open) {
+    const first = (event.outcomes ?? []).length;
+    const extra = (event.more ?? []).length;
+    const total = event.n_outcomes ?? first + extra;
+    const missing = total - first - extra; // existem na plataforma, mas passaram do teto guardado
+    if (!extra) return total > first ? el('p', { class: 'more', text: `e mais ${plural(total - first)}` }) : null;
+
+    const button = el('button', {
+      class: 'toggle',
+      type: 'button',
+      'aria-expanded': String(open),
+      text: open ? `Mostrar só os ${first} principais` : `Mostrar mais ${plural(extra)}`,
+    });
+    button.addEventListener('click', () => {
+      if (open) state.open.delete(key);
+      else state.open.add(key);
+      draw();
+    });
+    const note = missing <= 0 ? null : open ? ` ${first + extra} de ${total}; os demais não são guardados.` : ` de ${total} no total`;
+    return el('p', { class: 'more' }, [button, note ? document.createTextNode(note) : null]);
+  }
+
   function eventRow(venueKey, event, position) {
     const url = safeUrl(event.url);
     const title = url
@@ -354,7 +380,13 @@ h1 {
       .filter(Boolean)
       .map((text) => el('span', { text }));
 
-    const outcomes = (event.outcomes ?? []).map((outcome) =>
+    const key = `${venueKey}:${event.id}`;
+    const open = state.open.has(key);
+    const first = event.outcomes ?? [];
+    const list = open
+      ? [...first, ...(event.more ?? []).map(([label, prob, change_24h]) => ({ label, prob, change_24h }))].sort((a, b) => (b.prob ?? -1) - (a.prob ?? -1))
+      : first;
+    const outcomes = list.map((outcome) =>
       el('li', { class: 'outcome' }, [
         el('span', { class: 'label', text: YES_NO[outcome.label] ?? outcome.label }),
         rail(outcome),
@@ -362,7 +394,6 @@ h1 {
         delta(outcome),
       ]),
     );
-    const hidden = (event.n_outcomes ?? outcomes.length) - outcomes.length;
     const bound = event.bounds?.[state.window];
 
     return el('li', { class: 'event' }, [
@@ -379,14 +410,14 @@ h1 {
         ]),
         meta.length ? el('p', { class: 'meta' }, meta) : null,
         el('ul', { class: 'outcomes' }, outcomes),
-        hidden > 0 ? el('p', { class: 'more', text: `e mais ${hidden} ${hidden === 1 ? 'resultado' : 'resultados'}` }) : null,
+        outcomesFooter(key, event, open),
       ]),
     ]);
   }
 
   function matches(event, query) {
     if (!query) return true;
-    const haystack = fold([event.title, event.subtitle, event.source_category, ...(event.tags ?? []), ...(event.outcomes ?? []).map((o) => o.label)].join(' '));
+    const haystack = fold([event.title, event.subtitle, event.source_category, ...(event.tags ?? []), ...(event.outcomes ?? []).map((o) => o.label), ...(event.more ?? []).map((o) => o[0])].join(' '));
     return query.split(/\s+/).every((word) => haystack.includes(word));
   }
 

@@ -96,6 +96,7 @@ test('caminho feliz: janelas, categorias e resultados das duas plataformas', asy
   assert.equal(fed.source_category, 'Economics');
   assert.equal(fed.n_outcomes, 5, 'mercado já liquidado não é resultado');
   assert.deepEqual(fed.outcomes.map((o) => o.label), ['Cut 25bps', 'No change', 'Cut 50bps', 'Hike 25bps']);
+  assert.deepEqual(fed.more, [['Cut 75bps+', null, null]], 'o quinto resultado fica guardado para expandir');
   assert.equal(fed.subtitle, 'Dec 9 meeting');
 
   // Aberto há 500 dias: até o ano vem dos candles.
@@ -318,6 +319,7 @@ test('faixas independentes mostram os resultados mais próximos de 50%', () => {
 
   const ladder = normalizeKalshiEvent({ ...base, mutually_exclusive: false });
   assert.deepEqual(ladder.outcomes.map((o) => o.label), ['$60k', '$62k', '$63k', '$65k']);
+  assert.deepEqual(ladder.more, [['$57k', 0.99, 0], ['$58k', 0.97, 0], ['$70k', 0.03, 0]]);
   assert.equal(ladder.n_outcomes, 7);
 
   // Quando só um resultado pode acontecer, continuam valendo os mais prováveis.
@@ -354,6 +356,7 @@ test('jogo na Polymarket mostra o vencedor, não as linhas de handicap', () => {
     ['Lakers', 0.38, 0.04],
   ]);
   assert.equal(game.n_outcomes, 2);
+  assert.deepEqual(game.more, []);
 
   // Futebol: três mercados Sim/Não (casa, empate, fora), todos "moneyline".
   const soccer = normalizePolymarketEvent({
@@ -370,4 +373,26 @@ test('jogo na Polymarket mostra o vencedor, não as linhas de handicap', () => {
     ],
   });
   assert.deepEqual(soccer.outcomes.map((o) => [o.label, o.prob]), [['Arsenal', 0.5], ['Draw', 0.27], ['Chelsea', 0.23]]);
+});
+
+test('resultados guardados respeitam o teto por evento', () => {
+  const markets = Array.from({ length: 80 }, (_, i) => ({
+    ticker: `KXBIG-${i}`,
+    yes_sub_title: `Candidato ${i}`,
+    status: 'active',
+    yes_bid_dollars: '0',
+    yes_ask_dollars: '1',
+    last_price_dollars: String((80 - i) / 1000),
+    previous_price_dollars: String((80 - i) / 1000),
+    volume_fp: '10.00',
+    volume_24h_fp: '1.00',
+    open_interest_fp: '1.00',
+    open_time: new Date().toISOString(),
+  }));
+  const event = normalizeKalshiEvent({ event_ticker: 'KXBIG', series_ticker: 'KXBIG', title: 'Muitos candidatos', category: 'Politics', mutually_exclusive: true, markets });
+  assert.equal(event.n_outcomes, 80);
+  assert.equal(event.outcomes.length, 4);
+  assert.equal(event.more.length, 46, '50 guardados no total');
+  assert.deepEqual(event.more[0], ['Candidato 4', 0.076, 0]);
+  assert.equal(event.more.at(-1)[0], 'Candidato 49');
 });

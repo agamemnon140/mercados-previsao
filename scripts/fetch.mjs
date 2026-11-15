@@ -23,7 +23,8 @@ const POLY_SCAN_MAX_PAGES = intEnv('POLY_SCAN_MAX_PAGES', 300); // 100 eventos p
 const PAUSE_MS = intEnv('PAUSE_MS', 120); // pausa entre requisições
 const RETRY_BASE_MS = intEnv('RETRY_BASE_MS', 1000);
 const TIMEOUT_MS = intEnv('TIMEOUT_MS', 30000);
-const OUTCOMES_KEPT = 4; // resultados guardados por evento
+const OUTCOMES_KEPT = 4; // resultados mostrados de início em cada evento
+const OUTCOMES_STORED = intEnv('OUTCOMES_STORED', 50); // resultados guardados por evento, contando os de início
 const TIGHT_SPREAD = 0.1; // até 10 centavos de spread, vale o ponto médio
 const USER_AGENT = 'mercados-previsao/1.0 (coleta diaria, somente leitura)';
 const DAY_SECONDS = 86400;
@@ -193,7 +194,7 @@ export function normalizeKalshiEvent(event, nowMs = Date.now()) {
     liquidity: null,
     closes_at: closeTimes.at(-1) ?? null,
     n_outcomes: outcomes.length,
-    outcomes: pickOutcomes(outcomes, event.mutually_exclusive !== false),
+    ...storedOutcomes(outcomes, event.mutually_exclusive !== false),
     // Uso interno, para calcular o volume de cada janela; não vai para o arquivo.
     _series: series,
     _markets: markets
@@ -447,7 +448,7 @@ export function normalizePolymarketEvent(event) {
     liquidity: round(num(event.liquidity), 0),
     closes_at: event.endDate ?? null,
     n_outcomes: outcomes.length,
-    outcomes: pickOutcomes(outcomes, exclusive),
+    ...storedOutcomes(outcomes, exclusive),
     _raw: raw,
   };
 }
@@ -573,6 +574,23 @@ export function pickOutcomes(outcomes, exclusive) {
     .sort((a, b) => distance(a) - distance(b) || b.volume_24h - a.volume_24h)
     .slice(0, OUTCOMES_KEPT)
     .sort(byProb);
+}
+
+/**
+ * O que vai para o arquivo: `outcomes` são os mostrados de início e `more` são
+ * os demais, até o teto, em forma compacta: [rótulo, probabilidade, variação em 24h].
+ */
+export function storedOutcomes(outcomes, exclusive) {
+  const picked = pickOutcomes(outcomes, exclusive);
+  const shown = new Set(picked);
+  const room = Math.max(0, OUTCOMES_STORED - picked.length);
+  const byProb = (a, b) => (b.prob ?? -1) - (a.prob ?? -1) || b.volume_24h - a.volume_24h;
+  const distance = (o) => (o.prob === null ? Infinity : Math.abs(o.prob - 0.5));
+  let rest = outcomes.filter((o) => !shown.has(o));
+  rest = exclusive
+    ? rest.sort(byProb).slice(0, room)
+    : rest.sort((a, b) => distance(a) - distance(b) || b.volume_24h - a.volume_24h).slice(0, room).sort(byProb);
+  return { outcomes: picked, more: rest.map((o) => [o.label, o.prob, o.change_24h]) };
 }
 
 /**

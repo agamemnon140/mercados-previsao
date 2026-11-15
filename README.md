@@ -44,7 +44,7 @@ Se a execução ficar vermelha, o log do passo *Coletar Kalshi e Polymarket* diz
 - **Probabilidade:** ponto médio entre compra e venda quando o spread é de até 10 centavos; senão, o último negócio. A Polymarket já publica o preço assim; para a Kalshi o script aplica a mesma regra.
 - **Variação:** sempre a de 24 horas, qualquer que seja o período escolhido.
 - **Categorias:** as etiquetas de cada plataforma são reduzidas a um conjunto comum por palavras-chave (`CATEGORY_RULES` no script). Na Polymarket, que usa várias tags por evento, cada tag e o título valem um ponto para a categoria que casar; vence a de mais pontos.
-- **Resultados mostrados:** até quatro por evento. Quando só um pode acontecer (vencedor de eleição, campeão), são os mais prováveis. Quando são independentes (faixas de preço, datas), são os mais próximos de 50%. Em jogos da Polymarket, só o mercado de vencedor.
+- **Resultados mostrados:** quatro de início por evento. Quando só um pode acontecer (vencedor de eleição, campeão), são os mais prováveis. Quando são independentes (faixas de preço, datas), são os mais próximos de 50%. Em jogos da Polymarket, só o mercado de vencedor. “Mostrar mais” abre os demais, pela mesma regra, até 50 guardados por evento.
 - **Rankings guardados:** os 500 maiores no geral e os 100 maiores de cada categoria, por período. Combos da Kalshi (eventos multivariados) ficam de fora.
 
 ## Ajustes
@@ -58,6 +58,7 @@ Variáveis de ambiente lidas pelo script (defina no passo *Coletar* do workflow)
 | `POLY_DEPTH` | 2000 | Eventos lidos por período na Polymarket. |
 | `KALSHI_CANDLE_EVENTS` | 3000 | Eventos da Kalshi com candles consultados. |
 | `HISTORY_TOP` | 100 | Eventos por período no resumo diário. |
+| `OUTCOMES_STORED` | 50 | Resultados guardados por evento. |
 | `KALSHI_MAX_PAGES` | 600 | Limite da varredura da Kalshi (200 eventos por página). |
 
 O horário fica na linha `cron` do workflow, sempre em UTC.
