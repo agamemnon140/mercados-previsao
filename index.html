@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Maiores mercados de previsão</title>
+<meta name="description" content="Os maiores mercados da Kalshi e da Polymarket por volume no dia, na semana, no mês e no ano, atualizados uma vez por dia.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #e9edf3;
+  --panel: #fbfcfe;
+  --ink: #132039;
+  --muted: #56657d;
+  --rule: #d5dce7;
+  --kalshi: #0a8a68;
+  --polymarket: #2a55c9;
+  --warn-ink: #7a4700;
+  --warn-bg: #fff1cf;
+  --text: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --narrow: "IBM Plex Sans Condensed", "IBM Plex Sans", "Arial Narrow", system-ui, sans-serif;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1626;
+    --panel: #151f35;
+    --ink: #e6ebf5;
+    --muted: #95a3bc;
+    --rule: #26334f;
+    --kalshi: #3cc6a0;
+    --polymarket: #86a6ff;
+    --warn-ink: #f2c46b;
+    --warn-bg: #3a2e12;
+  }
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 1rem/1.45 var(--text);
+  font-variant-numeric: tabular-nums;
+}
+a { color: inherit; text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 0.18em; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 2px; }
+
+.page { max-width: 1240px; margin: 0 auto; padding: 2rem 1.25rem 3rem; }
+
+/* Cabeçalho */
+.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 0.75rem 2rem; }
+h1 {
+  margin: 0;
+  font: 600 clamp(1.9rem, 4.2vw, 2.9rem)/1.05 var(--narrow);
+  letter-spacing: -0.012em;
+}
+.lede { margin: 0.4rem 0 0; color: var(--muted); max-width: 46ch; }
+.stamp { margin: 0; color: var(--muted); font-size: 0.9rem; text-align: right; }
+.stamp strong { display: block; color: var(--ink); font-weight: 500; font-size: 1rem; }
+
+.notice {
+  margin: 1.25rem 0 0;
+  padding: 0.7rem 0.9rem;
+  border-radius: 4px;
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+  font-size: 0.93rem;
+}
+
+/* Controles */
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1.25rem; margin: 1.5rem 0 1rem; }
+.field { display: inline-flex; align-items: center; gap: 0.6rem; }
+.field-label { color: var(--muted); font-size: 0.9rem; }
+.search { flex: 1 1 14rem; max-width: 24rem; }
+.search input, .field select {
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+}
+.search input { width: 100%; }
+.search input::placeholder { color: var(--muted); }
+.switch { display: inline-flex; border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; background: var(--panel); }
+.switch button {
+  padding: 0.5rem 0.8rem;
+  border: 0;
+  border-right: 1px solid var(--rule);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+.switch button:last-child { border-right: 0; }
+.switch button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+.venue-switch { display: none; }
+
+/* Colunas */
+.board { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem; align-items: start; }
+.venue {
+  --hue: var(--kalshi);
+  background: var(--panel);
+  border-top: 4px solid var(--hue);
+  border-radius: 6px;
+  padding: 1.1rem 1.25rem 0.5rem;
+  min-width: 0;
+}
+.venue[data-venue="polymarket"] { --hue: var(--polymarket); }
+.venue h2 { margin: 0; font: 600 1.45rem/1.15 var(--narrow); }
+.venue .unit { margin: 0.2rem 0 0; color: var(--muted); font-size: 0.88rem; }
+.venue .notice { margin-top: 0.8rem; }
+.empty { margin: 1.5rem 0; color: var(--muted); }
+
+.events { list-style: none; margin: 0.9rem 0 0; padding: 0; }
+.event { display: grid; grid-template-columns: 2rem minmax(0, 1fr); gap: 0 0.4rem; padding: 0.95rem 0; border-top: 1px solid var(--rule); }
+.rank { color: var(--muted); font: 500 0.95rem/1.5 var(--narrow); }
+.head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+.title { font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+.vol { flex: none; font: 600 1rem/1.3 var(--narrow); white-space: nowrap; }
+.vol[data-bound] { cursor: help; }
+.meta { display: flex; flex-wrap: wrap; gap: 0 0.9rem; margin: 0.15rem 0 0; color: var(--muted); font-size: 0.85rem; }
+
+.outcomes { list-style: none; margin: 0.55rem 0 0; padding: 0; }
+.outcome {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(4.5rem, 1.1fr) 3.1rem 4.2rem;
+  align-items: center;
+  gap: 0 0.7rem;
+  padding: 0.14rem 0;
+}
+.label { font: 500 0.95rem/1.3 var(--narrow); overflow-wrap: anywhere; }
+.pct { font: 600 1.05rem/1.2 var(--narrow); text-align: right; }
+.delta { color: var(--muted); font: 500 0.85rem/1.2 var(--narrow); white-space: nowrap; }
+.delta.big { color: var(--ink); font-weight: 600; }
+.more { margin: 0.25rem 0 0; color: var(--muted); font-size: 0.85rem; }
+
+/* Régua de 0 a 100%: o ponto cheio é hoje, o vazado é 24 horas atrás. */
+.rail { position: relative; height: 1rem; }
+.rail::before { content: ""; position: absolute; left: 0; right: 0; top: calc(50% - 1px); height: 2px; background: var(--rule); border-radius: 1px; }
+.rail::after { content: ""; position: absolute; left: calc(50% - 0.5px); top: calc(50% - 4px); width: 1px; height: 8px; background: var(--rule); }
+.rail .move { position: absolute; top: calc(50% - 2px); height: 4px; background: var(--hue); opacity: 0.45; border-radius: 2px; }
+.rail .was, .rail .now { position: absolute; top: 50%; border-radius: 50%; transform: translate(-50%, -50%); z-index: 1; }
+.rail .was { width: 9px; height: 9px; border: 1.5px solid var(--muted); background: var(--panel); }
+.rail .now { width: 11px; height: 11px; background: var(--hue); }
+
+.more-button { margin: 0.25rem 0 1rem 2.4rem; padding: 0.5rem 0.9rem; border: 1px solid var(--rule); border-radius: 4px; background: none; color: var(--ink); font: inherit; cursor: pointer; }
+
+/* Rodapé */
+.notes { margin: 2rem 0 0; color: var(--muted); font-size: 0.9rem; max-width: 76ch; }
+.notes p { margin: 0 0 0.6rem; }
+.notes a { text-decoration: underline; text-underline-offset: 0.18em; }
+
+@media (max-width: 880px) {
+  .page { padding: 1.4rem 0.9rem 2.5rem; }
+  .stamp { text-align: left; }
+  .board { grid-template-columns: minmax(0, 1fr); }
+  .venue-switch { display: inline-flex; }
+  .board[data-show="kalshi"] .venue[data-venue="polymarket"],
+  .board[data-show="polymarket"] .venue[data-venue="kalshi"] { display: none; }
+  .venue { padding: 1rem 0.9rem 0.4rem; }
+}
+@media (max-width: 480px) {
+  .outcome { grid-template-columns: minmax(0, 1fr) 3.1rem 4rem; }
+  .label { grid-column: 1 / -1; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="top">
+    <div>
+      <h1>Maiores mercados de previsão</h1>
+      <p class="lede">Kalshi e Polymarket, ordenados pelo volume negociado no período que você escolher.</p>
+    </div>
+    <p class="stamp" id="stamp" aria-live="polite">Carregando dados…</p>
+  </header>
+
+  <div id="page-notice"></div>
+
+  <div class="controls" id="controls" hidden>
+    <div class="field">
+      <span class="field-label" id="window-label">Volume do</span>
+      <div class="switch" id="window-switch" role="group" aria-labelledby="window-label">
+        <button type="button" data-window="day" aria-pressed="true">Dia</button>
+        <button type="button" data-window="week" aria-pressed="false">Semana</button>
+        <button type="button" data-window="month" aria-pressed="false">Mês</button>
+        <button type="button" data-window="year" aria-pressed="false">Ano</button>
+      </div>
+    </div>
+    <label class="field">
+      <span class="field-label">Categoria</span>
+      <select id="category"></select>
+    </label>
+    <label class="search">
+      <input id="search" type="search" placeholder="Filtrar por nome ou resultado" aria-label="Filtrar mercados" autocomplete="off">
+    </label>
+    <div class="field">
+      <span class="field-label" id="count-label">Mostrar</span>
+      <div class="switch" id="count-switch" role="group" aria-labelledby="count-label">
+        <button type="button" data-count="25" aria-pressed="true">25</button>
+        <button type="button" data-count="50" aria-pressed="false">50</button>
+        <button type="button" data-count="100" aria-pressed="false">100</button>
+      </div>
+    </div>
+    <div class="switch venue-switch" id="venue-switch" role="group" aria-label="Plataforma exibida">
+      <button type="button" data-venue="kalshi" aria-pressed="true">Kalshi</button>
+      <button type="button" data-venue="polymarket" aria-pressed="false">Polymarket</button>
+    </div>
+  </div>
+
+  <main class="board" id="board" data-show="kalshi"></main>
+
+  <footer class="notes" id="notes" hidden>
+    <p>Entram só mercados ainda abertos. O período muda a ordenação e o volume mostrado: últimas 24 horas, 7 dias, 30 dias ou 12 meses. A porcentagem e a variação são sempre as de agora contra 24 horas atrás.</p>
+    <p>A porcentagem é a probabilidade implícita no preço do “sim”: o ponto médio entre compra e venda quando a diferença é de até 10 centavos, ou o último negócio quando é maior. Na régua, o ponto cheio é o valor de hoje e o círculo vazado é o de 24 horas antes.</p>
+    <p>O volume está em contratos na Kalshi (cada contrato paga US$ 1 se o resultado acontecer) e em dólares na Polymarket, por isso as duas colunas não são diretamente comparáveis. A Polymarket publica o volume de cada período. A Kalshi publica só o de 24 horas e o total, então os outros períodos são calculados: mercado aberto há menos tempo que o período usa o total; mercado mais antigo usa a soma dos candles diários. Um valor com “≥” ou “≤” é um limite, não uma medida.</p>
+    <p>As categorias são uma simplificação das etiquetas de cada plataforma. Fonte: APIs públicas da Kalshi e da Polymarket, lidas uma vez por dia. <a href="data/latest.json">Dados brutos em JSON</a>.</p>
+  </footer>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  const VENUES = [
+    { key: 'kalshi', name: 'Kalshi', unit: 'em contratos de US$ 1' },
+    { key: 'polymarket', name: 'Polymarket', unit: 'em dólares' },
+  ];
+  const WINDOWS = { day: 'em 24 horas', week: 'em 7 dias', month: 'em 30 dias', year: 'em 12 meses' };
+  const WINDOW_SLUGS = { dia: 'day', semana: 'week', mes: 'month', ano: 'year' };
+  const CATEGORIES = {
+    all: 'Todas',
+    esportes: 'Esportes',
+    politica: 'Política',
+    economia: 'Economia',
+    cripto: 'Cripto',
+    cultura: 'Cultura',
+    ciencia: 'Ciência e tecnologia',
+    clima: 'Clima',
+    mundo: 'Mundo',
+    outros: 'Outros',
+  };
+  const BOUND_NOTES = {
+    min: 'Pelo menos este valor: o histórico diário deste mercado não foi consultado.',
+    max: 'No máximo este valor: é o total desde a abertura, há mais de um ano.',
+  };
+  const YES_NO = { Yes: 'Sim', No: 'Não' };
+  const state = { data: null, query: '', count: 25, window: 'day', category: 'all' };
+
+  const $ = (id) => document.getElementById(id);
+  const compact = new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 });
+  const dayMonth = new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'short' });
+  const dayMonthYear = new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'short', year: 'numeric' });
+  const dateTime = new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const relative = new Intl.RelativeTimeFormat('pt-BR', { numeric: 'auto' });
+
+  /** Cria um elemento; texto sempre entra como texto, nunca como HTML. */
+  function el(tag, props = {}, children = []) {
+    const node = document.createElement(tag);
+    for (const [key, value] of Object.entries(props)) {
+      if (value === null || value === undefined || value === false) continue;
+      if (key === 'class') node.className = value;
+      else if (key === 'text') node.textContent = value;
+      else node.setAttribute(key, value);
+    }
+    for (const child of [].concat(children)) if (child) node.append(child);
+    return node;
+  }
+
+  const fold = (s) => String(s ?? '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+  const clamp = (x) => Math.min(100, Math.max(0, x));
+
+  function percent(prob) {
+    if (prob === null || prob === undefined) return '–';
+    const value = prob * 100;
+    if (value > 0 && value < 1) return '<1%';
+    if (value > 99 && value < 100) return '>99%';
+    return `${Math.round(value)}%`;
+  }
+
+  function volumeText(venueKey, value, bound) {
+    if (value === null || value === undefined) return '';
+    const prefix = bound === 'min' ? '≥ ' : bound === 'max' ? '≤ ' : '';
+    const text = compact.format(value);
+    return prefix + (venueKey === 'polymarket' ? `US$ ${text}` : text);
+  }
+
+  function ago(iso) {
+    const minutes = Math.round((new Date(iso) - Date.now()) / 60000);
+    if (Math.abs(minutes) < 60) return relative.format(minutes, 'minute');
+    const hours = Math.round(minutes / 60);
+    if (Math.abs(hours) < 36) return relative.format(hours, 'hour');
+    return relative.format(Math.round(hours / 24), 'day');
+  }
+
+  function closing(iso) {
+    if (!iso) return null;
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime()) || date < Date.now()) return null;
+    const sameYear = date.getFullYear() === new Date().getFullYear();
+    return `fecha em ${(sameYear ? dayMonth : dayMonthYear).format(date)}`;
+  }
+
+  function safeUrl(url) {
+    return typeof url === 'string' && url.startsWith('https://') ? url : null;
+  }
+
+  function rail(outcome) {
+    const now = outcome.prob === null || outcome.prob === undefined ? null : clamp(outcome.prob * 100);
+    const node = el('span', { class: 'rail', 'aria-hidden': 'true' });
+    if (now === null) return node;
+    const points = Math.round((outcome.change_24h ?? 0) * 100);
+    if (points !== 0) {
+      const was = clamp(now - outcome.change_24h * 100);
+      const move = el('span', { class: 'move' });
+      move.style.left = `${Math.min(was, now)}%`;
+      move.style.width = `${Math.abs(now - was)}%`;
+      const ghost = el('span', { class: 'was' });
+      ghost.style.left = `${was}%`;
+      node.append(move, ghost);
+    }
+    const dot = el('span', { class: 'now' });
+    dot.style.left = `${now}%`;
+    node.append(dot);
+    return node;
+  }
+
+  function delta(outcome) {
+    const points = Math.round((outcome.change_24h ?? 0) * 100);
+    if (outcome.change_24h === null || outcome.change_24h === undefined || points === 0) return el('span', { class: 'delta' });
+    const up = points > 0;
+    return el('span', {
+      class: `delta${Math.abs(points) >= 5 ? ' big' : ''}`,
+      text: `${up ? '▲' : '▼'} ${Math.abs(points)} pp`,
+      title: `${up ? 'Subiu' : 'Caiu'} ${Math.abs(points)} pontos percentuais em 24 horas`,
+    });
+  }
+
+  function eventRow(venueKey, event, position) {
+    const url = safeUrl(event.url);
+    const title = url
+      ? el('a', { class: 'title', href: url, rel: 'noopener noreferrer', target: '_blank', text: event.title || event.id })
+      : el('span', { class: 'title', text: event.title || event.id });
+
+    const meta = [event.subtitle, CATEGORIES[event.category], closing(event.closes_at)]
+      .filter(Boolean)
+      .map((text) => el('span', { text }));
+
+    const outcomes = (event.outcomes ?? []).map((outcome) =>
+      el('li', { class: 'outcome' }, [
+        el('span', { class: 'label', text: YES_NO[outcome.label] ?? outcome.label }),
+        rail(outcome),
+        el('span', { class: 'pct', text: percent(outcome.prob) }),
+        delta(outcome),
+      ]),
+    );
+    const hidden = (event.n_outcomes ?? outcomes.length) - outcomes.length;
+    const bound = event.bounds?.[state.window];
+
+    return el('li', { class: 'event' }, [
+      el('span', { class: 'rank', text: String(position) }),
+      el('div', {}, [
+        el('div', { class: 'head' }, [
+          title,
+          el('span', {
+            class: 'vol',
+            'data-bound': bound,
+            text: volumeText(venueKey, event.volume?.[state.window], bound),
+            title: BOUND_NOTES[bound] ?? `Volume ${WINDOWS[state.window]}`,
+          }),
+        ]),
+        meta.length ? el('p', { class: 'meta' }, meta) : null,
+        el('ul', { class: 'outcomes' }, outcomes),
+        hidden > 0 ? el('p', { class: 'more', text: `e mais ${hidden} ${hidden === 1 ? 'resultado' : 'resultados'}` }) : null,
+      ]),
+    ]);
+  }
+
+  function matches(event, query) {
+    if (!query) return true;
+    const haystack = fold([event.title, event.subtitle, event.source_category, ...(event.tags ?? []), ...(event.outcomes ?? []).map((o) => o.label)].join(' '));
+    return query.split(/\s+/).every((word) => haystack.includes(word));
+  }
+
+  function venuePanel(venue) {
+    const data = state.data.venues?.[venue.key] ?? { ok: false };
+    const events = data.events ?? {};
+    const ids = data.rankings?.[state.window]?.[state.category] ?? [];
+    const panel = el('section', { class: 'venue', 'data-venue': venue.key, 'aria-label': venue.name }, [
+      el('h2', { text: venue.name }),
+      el('p', { class: 'unit', text: `Volume ${WINDOWS[state.window]}, ${venue.unit}` }),
+    ]);
+
+    if (!data.ok) {
+      const since = data.fetched_at ? `Os dados abaixo são de ${dateTime.format(new Date(data.fetched_at))}.` : 'Ainda não há dados desta plataforma.';
+      panel.append(el('p', { class: 'notice', text: `A ${venue.name} não respondeu na última coleta. ${since}` }));
+    } else if (data.truncated) {
+      panel.append(el('p', { class: 'notice', text: 'A varredura parou no limite de páginas; pode faltar algum mercado nesta lista.' }));
+    } else if (state.window !== 'day' && data.candles?.failed && !data.candles.ok) {
+      panel.append(el('p', { class: 'notice', text: 'O histórico diário da Kalshi não respondeu nesta coleta. Para mercados abertos há mais tempo que o período, o volume aparece como limite (≥ ou ≤).' }));
+    }
+
+    const query = fold(state.query).trim();
+    const ranked = ids
+      .map((id, index) => ({ event: events[id], position: index + 1 }))
+      .filter(({ event }) => event && matches(event, query));
+    const shown = ranked.slice(0, state.count);
+
+    if (!shown.length) {
+      const scope = state.category === 'all' ? 'mercado' : `mercado de ${CATEGORIES[state.category]}`;
+      panel.append(el('p', {
+        class: 'empty',
+        text: !ids.length
+          ? `Nenhum ${scope} com volume neste período.`
+          : `Nenhum dos ${ids.length} mercados desta lista combina com “${state.query.trim()}”.`,
+      }));
+      return panel;
+    }
+
+    panel.append(el('ol', { class: 'events' }, shown.map(({ event, position }) => eventRow(venue.key, event, position))));
+    if (ranked.length > shown.length) {
+      const button = el('button', { class: 'more-button', type: 'button', text: `Mostrar todos os ${ranked.length}` });
+      button.addEventListener('click', () => setCount(100));
+      panel.append(button);
+    }
+    return panel;
+  }
+
+  function render() {
+    $('board').replaceChildren(...VENUES.map(venuePanel));
+  }
+
+  function press(groupId, attribute, value) {
+    for (const button of $(groupId).querySelectorAll('button')) {
+      button.setAttribute('aria-pressed', String(button.dataset[attribute] === String(value)));
+    }
+  }
+
+  function setCount(count) {
+    state.count = count;
+    press('count-switch', 'count', count);
+    render();
+  }
+
+  /** O endereço guarda período e categoria, por exemplo #semana-politica. */
+  function readHash() {
+    const [windowSlug, category] = location.hash.replace(/^#/, '').split('-');
+    state.window = WINDOW_SLUGS[windowSlug] ?? 'day';
+    state.category = CATEGORIES[category] ? category : 'all';
+  }
+
+  function writeHash() {
+    const windowSlug = Object.keys(WINDOW_SLUGS).find((slug) => WINDOW_SLUGS[slug] === state.window);
+    const hash = state.window === 'day' && state.category === 'all' ? '' : `#${windowSlug}${state.category === 'all' ? '' : `-${state.category}`}`;
+    history.replaceState(null, '', hash || location.pathname + location.search);
+  }
+
+  function syncControls() {
+    press('window-switch', 'window', state.window);
+    $('category').value = state.category;
+  }
+
+  function showStamp() {
+    const generated = state.data.generated_at;
+    const hours = (Date.now() - new Date(generated)) / 3600000;
+    $('stamp').replaceChildren(
+      el('strong', { text: `Atualizado ${ago(generated)}` }),
+      document.createTextNode(dateTime.format(new Date(generated))),
+    );
+    if (hours > 36) {
+      $('page-notice').replaceChildren(el('p', {
+        class: 'notice',
+        text: 'A coleta diária parece ter parado: os dados têm mais de um dia e meio. Confira a aba Actions do repositório.',
+      }));
+    }
+  }
+
+  function showFailure(message) {
+    $('stamp').textContent = 'Sem dados';
+    $('page-notice').replaceChildren(el('p', { class: 'notice', text: message }));
+  }
+
+  $('category').append(...Object.entries(CATEGORIES).map(([value, text]) => el('option', { value, text })));
+
+  $('window-switch').addEventListener('click', (event) => {
+    const button = event.target.closest('button');
+    if (!button) return;
+    state.window = button.dataset.window;
+    syncControls();
+    writeHash();
+    render();
+  });
+  $('category').addEventListener('change', (event) => {
+    state.category = event.target.value;
+    writeHash();
+    render();
+  });
+  $('search').addEventListener('input', (event) => {
+    state.query = event.target.value;
+    render();
+  });
+  $('count-switch').addEventListener('click', (event) => {
+    const button = event.target.closest('button');
+    if (button) setCount(Number(button.dataset.count));
+  });
+  $('venue-switch').addEventListener('click', (event) => {
+    const button = event.target.closest('button');
+    if (!button) return;
+    $('board').dataset.show = button.dataset.venue;
+    press('venue-switch', 'venue', button.dataset.venue);
+  });
+  window.addEventListener('hashchange', () => {
+    readHash();
+    syncControls();
+    if (state.data) render();
+  });
+
+  readHash();
+  syncControls();
+
+  fetch(`data/latest.json?t=${Date.now()}`, { cache: 'no-store' })
+    .then((res) => {
+      if (res.status === 404) throw new Error('missing');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    })
+    .then((data) => {
+      if (data.schema !== 2) throw new Error('formato antigo');
+      state.data = data;
+      $('controls').hidden = false;
+      $('notes').hidden = false;
+      showStamp();
+      render();
+    })
+    .catch((err) => {
+      showFailure(
+        err.message === 'missing'
+          ? 'Ainda não há dados. Abra a aba Actions do repositório e rode “Atualizar odds” uma vez.'
+          : `Não deu para ler data/latest.json (${err.message}). Recarregue a página em alguns minutos.`,
+      );
+    });
+})();
+</script>
+</body>
+</html>

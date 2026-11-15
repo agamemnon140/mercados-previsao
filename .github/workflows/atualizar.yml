@@ -1,0 +1,39 @@
+name: Atualizar odds
+
+on:
+  schedule:
+    # Todo dia às 09:17 UTC (06:17 em Brasília). O GitHub pode atrasar alguns minutos.
+    - cron: '17 9 * * *'
+  workflow_dispatch: # permite rodar na hora pela aba Actions
+
+permissions:
+  contents: write
+
+concurrency:
+  group: atualizar-odds
+  cancel-in-progress: false
+
+jobs:
+  coletar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      # O runner já traz Node com fetch nativo; o script não tem dependências.
+      - name: Coletar Kalshi e Polymarket
+        run: node scripts/fetch.mjs
+
+      # Roda mesmo se uma das plataformas falhou: a outra é publicada e o job fica vermelho.
+      - name: Publicar dados
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data
+          if git diff --cached --quiet; then
+            echo "Nada novo para publicar."
+          else
+            git commit -m "dados: $(date -u +%F)"
+            git push
+          fi
